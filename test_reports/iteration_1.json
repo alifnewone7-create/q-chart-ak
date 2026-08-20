@@ -1,0 +1,36 @@
+{
+  "summary": "Verified the ~24h silent-freeze bug fix in the TaNix Alpha 2.0 bot repo at /app/q-chart-fin/backend. Wrote 39 focused unit/simulation tests (tests/test_freeze_fix.py) covering every review item: bounded qx.QuotexManager.ensure_connected() timeouts, lock-release-after-stall, concurrent callers, hanging check_connect fallthrough, old-client close-on-replace, bounded close, pyquotex api.start_websocket handshake timeout (with source assertion that all four original state-flag return paths remain), api.close bounded thread join + None safety, stable_api.Quotex.connect closing the previous api BEFORE reassignment, stable_api.Quotex.close safe with api=None, watchdog session-revival, tick-stall hard-exit, all negative cases (started_at is None, recent tick, running task, inactive session), watchdog exception resilience, post_init/post_shutdown wiring, start.py RotatingFileHandler + no logging.disable + actual on-disk write, plus regressions for OWNER_TAG='@BfsTraderQX' rendered as <b>@BfsTraderQX</b>, premiumize/plain_html preserving <b>/</b> tags while escaping other HTML, to_entities/bold_entities UTF-16 spans, user_sender._entities producing MessageEntityBold + MessageEntityCustomEmoji, and charting.render_chart producing valid PNGs for signal and result frames with no LOSSES box and engine_section() drawn on both frames. All 39 tests pass. The reported deadlock is confirmed fixed: hanging client.connect no longer wedges ensure_connected() or the lock.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "tests/test_qx_bugfix.py", "issue": "Pre-existing repo test uses sys.path.insert(0, '/app/backend'), a wrong path from the template repo layout. It still passes because conftest.py fixes sys.path, but the line is dead code and misleading."},
+      {"endpoint": "pytest suite", "issue": "33 pre-existing tests in tests/test_messages.py, test_premium_emoji_pipeline.py, test_bot_units.py, test_channel_selection.py, test_martingale_pnl.py, test_charting_pricetag.py were written against the OLD caption/emoji pipeline (before the recent owner-tag + <b> change) and now fail. They are unrelated to the freeze bug; they need updating to reflect the new premiumize()/plain_html() behavior that preserves <b> tags and the new signal_caption() owner render. Not blocking the freeze fix."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/q-chart-fin/backend/tests/test_freeze_fix.py",
+    "/app/test_reports/pytest/freeze_fix_results.xml"
+  ],
+  "action_items": [
+    "Freeze/deadlock fix is verified — no code change needed for the primary bug.",
+    "Optional: update the 33 pre-existing tests (test_messages.py, test_premium_emoji_pipeline.py, test_bot_units.py, test_channel_selection.py, test_martingale_pnl.py, test_charting_pricetag.py) to match the new owner=<b>@BfsTraderQX</b> caption / premiumize-preserves-<b> behavior. Their failures are stale expectations, not regressions in the changes described in the review.",
+    "Optional cleanup: /app/q-chart-fin/backend/tests/test_qx_bugfix.py has a hard-coded sys.path.insert(0, '/app/backend') that points to the wrong template dir; harmless but should be removed."
+  ],
+  "critical_code_review_comments": [
+    "qx.ensure_connected() correctly wraps EVERY network step (check_connect, connect, change_account, get_instruments, and old-client close) in asyncio.wait_for — the exact root cause of the 24h freeze is closed.",
+    "bot._watchdog() has correct negative-case handling: it will NOT exit while TICKS.started_at is None (booting) and NOT exit while last_tick is recent, so a slow Quotex startup does not cause a restart loop.",
+    "pyquotex.api.start_websocket keeps all four original success/error return paths intact and adds a bounded deadline as a 5th path — no behavior regression.",
+    "pyquotex.stable_api.Quotex.connect() now closes the PREVIOUS self.api before reassigning; also Quotex.close() correctly guards self.api is None.",
+    "start.py replaced logging.disable(CRITICAL) with a RotatingFileHandler writing backend/data/bot.log — future incidents will now leave a trace on disk.",
+    "Pre-existing test suite in this repo is inconsistent with the recent owner-tag/premium-emoji changes; 33 tests fail unrelated to the freeze fix. Recommend updating them or marking them xfail so CI stays green."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (39/39 targeted tests)", "frontend": "n/a"},
+  "test_credentials": "Dummy env vars set via conftest.py: BOT_TOKEN, ADMIN_ID, QUOTEX_EMAIL, QUOTEX_PASSWORD. No real credentials exist or were used.",
+  "seed_data_creation": "None. All tests use in-memory fakes and monkeypatched modules; no external services touched.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run the primary regression suite with:  cd /app/q-chart-fin/backend && python -m pytest tests/test_freeze_fix.py -n 0. Do NOT enable xdist for this file (some tests monkeypatch module-level globals like bot.SM/TICKS/WATCHDOG_INTERVAL and would race under parallel workers). The 33 pre-existing failures in the other test files are stale expectations from before the recent owner-tag/premium-emoji changes and are outside the scope of the freeze bug.",
+  "rca of the issue": "24h silent freeze RCA: Quotex websocket handshake had NO timeout (while True with asyncio.sleep(0.1)) and QuotexAPI.close() called websocket_thread.join() with NO timeout inside an async context. All Quotex calls in the bot funnel through QuotexManager.ensure_connected() under a single asyncio.Lock, so one stalled socket froze the entire process while keeping it alive — systemd Restart=always never fired. Additionally, stable_api.Quotex.connect() reassigned self.api BEFORE calling close(), leaking the old websocket thread on every reconnect. start.py did logging.disable(CRITICAL) so no evidence survived. Fix (verified by these tests): bounded WS_HANDSHAKE_TIMEOUT and WS_JOIN_TIMEOUT in pyquotex.api, asyncio.wait_for around every network step in qx.QuotexManager, close-old-api-before-reassign in stable_api.Quotex.connect, RotatingFileHandler in start.py, and an asyncio watchdog task (bot._watchdog) that revives dead session loops and os._exit(1)s on tick stalls so systemd restarts the bot as a last resort."
+}
