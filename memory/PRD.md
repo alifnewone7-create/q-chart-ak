@@ -86,9 +86,49 @@ that grew for ~24h.
   same 29 failures as the untouched `e1ec500` baseline (stale pre-existing expectations), so no
   regressions were introduced.
 
+### 2026-06 — ~30-48h freeze, ROUND 2 (real root cause: blocked event loop)
+User feedback: still going off, just later (30-48h), and critically **`/start` gets no reply**.
+`bot.cmd_start` never touches Quotex, so no reply proves the whole **asyncio event loop** was
+blocked — not just the Quotex lock. Round-1 fixes were therefore incomplete, and worse, gave false
+confidence: `asyncio.wait_for` CANNOT cancel a synchronous call, and the round-1 `_watchdog()` was
+an asyncio task so it froze along with the loop and could never rescue anything.
+
+RCA: the vendored login path is synchronous. `pyquotex/http/navigator.py Browser(requests.Session)
+.send_request()` did blocking `requests` I/O with **no timeout**, called straight from the event loop
+by `pyquotex/http/login.py Login.__call__` -> `get_token()` / `_post()` / `get_profile()`. Quotex
+sessions expire every ~30-48h, triggering a fresh credential login; one half-open TCP connection then
+froze Telegram polling, the tick collector and the signal loop simultaneously, with the process still
+alive so systemd never restarted it.
+
+- `pyquotex/http/navigator.py`: `DEFAULT_HTTP_TIMEOUT = (15, 45)` applied via
+  `kwargs.setdefault("timeout", ...)` in `send_request()` (explicit caller values still win).
+- `pyquotex/http/login.py`: `get_token`, `get_profile` and the `send_request` calls in `_post()` and
+  `awaiting_pin()` are now offloaded with `loop.run_in_executor(None, ...)` so the loop keeps
+  breathing during login.
+- `pyquotex/http/login.py`: `awaiting_pin()` raises a clear RuntimeError when `sys.stdin` is absent or
+  not a tty instead of calling `input()` (which blocked the loop on a tty and raised an uncaught
+  EOFError on /dev/null).
+- `bot.py`: new `_heartbeat()` asyncio task writing `_HEARTBEAT["loop"]` every second, plus
+  `_hard_watchdog()` running in a **plain daemon thread** (started in `post_init`) that calls
+  `os._exit(1)` after `LOOP_STALL_LIMIT=300`s without a heartbeat. A thread is the only supervisor
+  that still runs while the loop is blocked. `post_shutdown` cancels both tasks.
+- Verified: 23/23 new tests (`backend/tests/test_freeze_fix_r2.py`) + 39/39 round-1 tests
+  (`test_freeze_fix.py`); whole suite still exactly 29 pre-existing failures, no new regressions.
+  The "loop kept breathing during a slow login" test asserts a concurrent heartbeat coroutine kept
+  ticking (max gap < 0.35s) through a 0.8s blocking login.
+
+### Open verification item (blocking confirmation)
+The user reported **no log output at all**, yet round 1 enabled `backend/data/bot.log`. Either the new
+code was never deployed, or they are running one of the encrypted builds. Asked them to check
+`ls -la /root/tanix-bot/data/bot.log`, `grep RotatingFileHandler /root/tanix-bot/start.py` and
+`systemctl status tanix-bot`. Until that is confirmed, we cannot tell whether the round-1 fixes were
+ever actually live.
+
 ## Backlog
 
 ### P0
+- **Confirm the fixed code is actually deployed** (bot.log exists, start.py has the
+  RotatingFileHandler). The user saw no logs at all, which suggests it may not be live.
 - Deploy the fixed `backend/` to the VPS and watch `backend/data/bot.log` for a full 48h to confirm
   the freeze is gone in production (only unit-verified so far, never run against the live broker).
 - Rebuild `backend_encrypted/` and `backend_vps_encrypted/` from the fixed `backend/` — the shipped
