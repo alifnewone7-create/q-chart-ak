@@ -1,0 +1,21 @@
+[Unit]
+Description=TaNix Alpha 2.0 Telegram Bot (plain backend)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# ---- এই দুটো পাথ আপনার VPS অনুযায়ী ঠিক করুন ----
+WorkingDirectory=/root/tanix-bot
+ExecStart=/root/tanix-bot/venv/bin/python /root/tanix-bot/start.py
+# ------------------------------------------------
+Restart=always
+RestartSec=5
+# never stop retrying, even after repeated fast restarts
+StartLimitIntervalSec=0
+StartLimitBurst=0
+StandardOutput=append:/var/log/tanix-bot.log
+StandardError=append:/var/log/tanix-bot.log
+
+[Install]
+WantedBy=multi-user.target

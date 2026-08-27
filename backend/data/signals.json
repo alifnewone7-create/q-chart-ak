@@ -1,0 +1,96 @@
+[
+  {
+    "session_id": "S1",
+    "date": "03.08.2026",
+    "code": "USDINR_otc",
+    "display": "USD/INR OTC",
+    "direction": "CALL",
+    "entry": "14:43",
+    "entry_ts": 1785768180,
+    "result": "WIN",
+    "channel_id": 111
+  },
+  {
+    "session_id": "S1",
+    "date": "03.08.2026",
+    "code": "USDINR_otc",
+    "display": "USD/INR OTC",
+    "direction": "CALL",
+    "entry": "14:44",
+    "entry_ts": 1785768240,
+    "result": "WIN",
+    "channel_id": 111
+  },
+  {
+    "session_id": "S1",
+    "date": "03.08.2026",
+    "code": "USDINR_otc",
+    "display": "USD/INR OTC",
+    "direction": "CALL",
+    "entry": "14:45",
+    "entry_ts": 1785768300,
+    "result": "WIN",
+    "channel_id": 111
+  },
+  {
+    "session_id": "S1",
+    "date": "03.08.2026",
+    "code": "USDINR_otc",
+    "display": "USD/INR OTC",
+    "direction": "CALL",
+    "entry": "14:45",
+    "entry_ts": 1785768300,
+    "result": "WIN",
+    "channel_id": 111
+  },
+  {
+    "session_id": "S1",
+    "date": "04.08.2026",
+    "code": "USDINR_otc",
+    "display": "USD/INR OTC",
+    "direction": "CALL",
+    "entry": "05:56",
+    "entry_ts": 1785822960,
+    "result": "WIN",
+    "channel_id": 111
+  },
+  {
+    "session_id": "S1",
+    "date": "18.08.2026",
+    "code": "USDINR_otc",
+    "display": "USD/INR OTC",
+    "direction": "CALL",
+    "entry": "00:39",
+    "entry_ts": 1787013540,
+    "result": "WIN",
+    "pnl_delta": 1.0,
+    "pnl_total": 1.0,
+    "channel_id": 111
+  },
+  {
+    "session_id": "S1",
+    "date": "18.08.2026",
+    "code": "USDINR_otc",
+    "display": "USD/INR OTC",
+    "direction": "CALL",
+    "entry": "00:41",
+    "entry_ts": 1787013660,
+    "result": "WIN",
+    "pnl_delta": 1.0,
+    "pnl_total": 1.0,
+    "channel_id": 111
+  },
+  {
+    "session_id": "S1",
+    "date": "18.08.2026",
+    "code": "USDINR_otc",
+    "display": "USD/INR OTC",
+    "direction": "CALL",
+    "entry": "00:44",
+    "entry_ts": 1787013840,
+    "result": "WIN",
+    "pnl_delta": 1.0,
+    "pnl_total": 1.0,
+    "channel_id": 111
+  }
+]
