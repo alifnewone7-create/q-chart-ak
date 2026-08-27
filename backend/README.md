@@ -125,7 +125,7 @@ MIT License — free to use, modify, and distribute.
 
 ---
 
-## 🤖 TaNix Alpha 2.0 — Telegram Signal Bot
+## 🤖 SignalMaster Pro — Telegram Signal Bot
 
 Admin-only Telegram bot that sends Quotex 1m signals (chart image + caption) to your channels.
 

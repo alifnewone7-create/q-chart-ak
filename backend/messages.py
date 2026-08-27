@@ -39,7 +39,7 @@ def em(key):
 
 # ---- Mathematical Monospace font converter -------------------------------
 # maps ASCII A-Z / a-z / 0-9 to the Unicode "Mathematical Monospace" block so
-# messages render in the stylised font requested (e.g. TaNix Alpha 2.0).
+# messages render in the stylised font requested (e.g. SignalMaster Pro).
 
 def mono(text):
     out = []
@@ -71,7 +71,7 @@ def _dir_emoji(direction):
 def signal_caption(display, direction, entry_str, payout, reason, owner_tag):
     payout_str = f"{int(payout)}%" if payout else "\u2014"
     return (
-        f"{em('brand')} {mono('TaNix Alpha 2.0')} {em('brand')}\n"
+        f"{em('brand')} {mono('SignalMaster Pro')} {em('brand')}\n"
         f"{LINE}\n\n"
         f"{em('asset')} {mono('Asset')} : {mono(display)}\n\n"
         f"{em('signal')} {mono('Signal')} : {_dir_emoji(direction)} {mono(direction)}\n"

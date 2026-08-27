@@ -1,5 +1,5 @@
 [Unit]
-Description=TaNix Alpha 2.0 Telegram Bot (plain backend)
+Description=SignalMaster Pro Telegram Bot (plain backend)
 After=network-online.target
 Wants=network-online.target
 

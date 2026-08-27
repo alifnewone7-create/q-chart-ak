@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TaNix Alpha 2.0 — admin-only Telegram signal bot (entry point)."""
+"""SignalMaster Pro — admin-only Telegram signal bot (entry point)."""
 import asyncio
 import contextlib
 import logging
@@ -76,7 +76,7 @@ def main_menu_kb():
     ])
 
 
-MAIN_TEXT = "\u2728 TaNix Alpha 2.0 \u2728\n\nSelect an option below:"
+MAIN_TEXT = "\u2728 SignalMaster Pro \u2728\n\nSelect an option below:"
 
 
 async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -908,7 +908,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
     app.add_handler(ChatMemberHandler(on_my_chat_member, ChatMemberHandler.MY_CHAT_MEMBER))
     app.add_error_handler(on_error)
-    print("\U0001f680 TaNix Alpha 2.0 bot is running (polling)...")
+    print("\U0001f680 SignalMaster Pro bot is running (polling)...")
     app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
 

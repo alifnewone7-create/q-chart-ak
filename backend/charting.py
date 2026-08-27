@@ -1,4 +1,4 @@
-"""TaNix Alpha 2.0 — professional HUD-style candlestick chart PNG generator.
+"""SignalMaster Pro — professional HUD-style candlestick chart PNG generator.
 
 A clean trading dashboard image sent to Telegram:
     * Top header bar  : logo + brand + market name/OTC | big CALL/PUT badge |

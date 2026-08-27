@@ -59,7 +59,7 @@ class TestSignalCaption:
         assert _tag(SIGNAL_IDS["call"]) in cap
         assert _tag(SIGNAL_IDS["put"]) not in cap
         assert "CALL" in cap
-        assert "TaNix Alpha 2.0" in cap
+        assert "SignalMaster Pro" in cap
         # brand emoji appears TWICE (both sides of brand)
         assert cap.count(_tag(SIGNAL_IDS["brand"])) == 2
         # 20-char divider
@@ -173,7 +173,7 @@ class TestStripCustomEmoji:
         assert "\U0001f48e" in stripped  # asset diamond
         assert "\U0001f680" in stripped  # signal rocket
         # text kept
-        assert "TaNix Alpha 2.0" in stripped
+        assert "SignalMaster Pro" in stripped
         assert "Payout : 92%" in stripped
 
     def test_strips_result_caption(self):

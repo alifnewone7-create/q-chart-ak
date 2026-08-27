@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TaNix Alpha 2.0 — clean launcher.
+"""SignalMaster Pro — clean launcher.
 
 Runs the Telegram bot but keeps the console silent: only a single
 "Bot running..." line is shown. All library / pyquotex / telegram logs
