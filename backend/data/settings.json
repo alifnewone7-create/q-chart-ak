@@ -1,4 +1,5 @@
 {
   "mtg": "MTG-1",
-  "strategy": "classic"
+  "strategy": "classic",
+  "per_trade_pct": 1.0
 }

@@ -80,8 +80,8 @@ def gen_mean_revert(n, seed=0, k=0.20, noise=0.05, mean=100.0):
 
 class TestQuantumRemoved:
     def test_registry_keys(self):
-        assert set(strategies.STRATEGIES.keys()) == {"classic", "otc_sniper"}
-        assert strategies.ORDER == ["classic", "otc_sniper"]
+        assert set(strategies.STRATEGIES.keys()) == {"classic", "otc_sniper", "zone_sniper"}
+        assert strategies.ORDER == ["classic", "otc_sniper", "zone_sniper"]
         assert strategies.DEFAULT_KEY == "classic"
 
     def test_module_surface_has_no_quantum(self):
