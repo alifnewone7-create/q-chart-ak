@@ -1,0 +1,19 @@
+[Unit]
+Description=SignalMaster Pro Telegram Bot (plain backend)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/signalmaster
+ExecStart=/root/signalmaster/venv/bin/python /root/signalmaster/start.py
+Restart=always
+RestartSec=5
+# never stop retrying, even after repeated fast restarts
+StartLimitIntervalSec=0
+StartLimitBurst=0
+StandardOutput=append:/var/log/signalmaster.log
+StandardError=append:/var/log/signalmaster.log
+
+[Install]
+WantedBy=multi-user.target
