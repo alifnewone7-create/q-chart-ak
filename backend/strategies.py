@@ -6,7 +6,7 @@ Three engines live here:
   * otc_sniper        — "OTC Sniper Pro": a research-driven, regime-adaptive
                         confluence engine tuned for 1-minute OTC candles.
   * zone_sniper       — "Zone Reversal Sniper": support/resistance, trendline
-                        and multi-rejection level confluence (14 filters).
+                        and multi-rejection level confluence (15 filters).
 
 Both behave the same way from the session's point of view: give them enough
 closed candles and they always return a direction with a confidence score, so
@@ -695,6 +695,50 @@ def _f_multi_rejection(x, i, z):
     return _clamp(sign * mag * (0.4 + 0.6 * prox) * fresh)
 
 
+def _z_rev_confirm(x, i, z):
+    """(value, level) for a CONFIRMED rejection reversal off a real level.
+
+    Candle j (i-1 or i-2) must hit a level with a genuine wick and close away
+    from it, and candle i must then confirm by closing further in the reversal
+    direction. No confirmation candle -> no trade.
+    """
+    a = z["a"]
+    best = (0.0, None)
+    for lv in z["levels"]:
+        if lv["touches"] < 2 and lv["rejections"] < 1:
+            continue
+        p = lv["price"]
+        for j in range(max(1, i - 2), i):
+            hit_up = x.h[j] >= p - z["tol"] and x.cl[j] < p - 0.20 * a
+            hit_dn = x.l[j] <= p + z["tol"] and x.cl[j] > p + 0.20 * a
+            if not (hit_up or hit_dn):
+                continue
+            lw, uw = _wick_pair(x, j)
+            wick = uw if hit_up else lw
+            if wick < 0.30:
+                continue
+            if hit_up:
+                confirmed = x.body[i] < 0 and x.cl[i] < x.cl[j] - 0.10 * a
+                sign = -1.0
+            else:
+                confirmed = x.body[i] > 0 and x.cl[i] > x.cl[j] + 0.10 * a
+                sign = 1.0
+            if not confirmed:
+                continue
+            mag = min(1.0, 0.55 + 0.12 * min(3, lv["rejections"])
+                      + 0.35 * (wick - 0.30))
+            recency = 1.0 if (i - j) == 1 else 0.85
+            v = _clamp(sign * mag * recency)
+            if abs(v) > abs(best[0]):
+                best = (v, lv)
+    return best
+
+
+def _f_rev_confirm(x, i, z):
+    """Confirmed rejection reversal — the highest-conviction level setup."""
+    return _z_rev_confirm(x, i, z)[0]
+
+
 def _f_trendline(x, i, z):
     """Rising trendline support / falling trendline resistance touch."""
     a = z["a"]
@@ -844,20 +888,21 @@ def _f_exhaustion(x, i, z):
 
 # key, label, fn, weight AT a level, weight in OPEN space
 ZONE_FILTERS = [
-    ("sr_zone",    "Horizontal S/R zone",        _f_sr_zone,               0.16, 0.03),
-    ("multi_rej",  "Multi-rejection level",      _f_multi_rejection,       0.20, 0.04),
-    ("trendline",  "Trendline S/R touch",        _f_trendline,             0.12, 0.04),
-    ("sweep",      "False break / sweep",        _f_sweep,                 0.10, 0.03),
-    ("zone_candle", "Rejection candle at zone",  _f_zone_rejection_candle, 0.08, 0.03),
-    ("divergence", "RSI divergence at swing",    _f_divergence,            0.07, 0.02),
-    ("round",      "Round-number level",         _f_round_level,           0.04, 0.01),
-    ("band_ext",   "Bollinger + RSI extreme",    _f_band_extreme,          0.07, 0.03),
-    ("trend",      "EMA 8/21/50 stack",          _f_trend,                 0.04, 0.20),
-    ("break_rt",   "Break and retest hold",      _f_break_retest,          0.04, 0.14),
-    ("htf",        "5-minute alignment",         _f_htf_zone,              0.03, 0.12),
-    ("momentum",   "3-candle push + MACD",       _f_momentum,              0.02, 0.16),
-    ("pressure",   "Close-position pressure",    _f_close_pressure,        0.02, 0.10),
-    ("exhaust",    "Streak exhaustion",          _f_exhaustion,            0.01, 0.05),
+    ("sr_zone",    "Horizontal S/R zone",        _f_sr_zone,               0.14, 0.03),
+    ("multi_rej",  "Multi-rejection level",      _f_multi_rejection,       0.17, 0.04),
+    ("rev_confirm", "Confirmed rejection reversal", _f_rev_confirm,        0.22, 0.05),
+    ("trendline",  "Trendline S/R touch",        _f_trendline,             0.10, 0.04),
+    ("sweep",      "False break / sweep",        _f_sweep,                 0.08, 0.03),
+    ("zone_candle", "Rejection candle at zone",  _f_zone_rejection_candle, 0.07, 0.03),
+    ("divergence", "RSI divergence at swing",    _f_divergence,            0.06, 0.02),
+    ("round",      "Round-number level",         _f_round_level,           0.03, 0.01),
+    ("band_ext",   "Bollinger + RSI extreme",    _f_band_extreme,          0.05, 0.03),
+    ("trend",      "EMA 8/21/50 stack",          _f_trend,                 0.03, 0.19),
+    ("break_rt",   "Break and retest hold",      _f_break_retest,          0.02, 0.13),
+    ("htf",        "5-minute alignment",         _f_htf_zone,              0.01, 0.11),
+    ("momentum",   "3-candle push + MACD",       _f_momentum,              0.01, 0.15),
+    ("pressure",   "Close-position pressure",    _f_close_pressure,        0.01, 0.09),
+    ("exhaust",    "Streak exhaustion",          _f_exhaustion,            0.00, 0.05),
 ]
 
 _ZONE_PHRASES = {
@@ -865,6 +910,8 @@ _ZONE_PHRASES = {
                 "price is capped by a horizontal resistance zone"),
     "multi_rej": ("this level already rejected price back up several times",
                   "this level already rejected price back down several times"),
+    "rev_confirm": ("a rejection off the level was confirmed by the next candle closing up",
+                    "a rejection off the level was confirmed by the next candle closing down"),
     "trendline": ("price is sitting on a rising trendline support",
                   "price is pressing into a falling trendline resistance"),
     "sweep": ("a downside sweep was bought back inside the range",
@@ -896,6 +943,35 @@ def _z_fmt(price):
     return f"{price:.5f}" if abs(price) < 20 else f"{price:.3f}"
 
 
+def zone_levels(candles, min_touches=3, min_rejections=2, limit=3,
+                max_dist_atr=6.0):
+    """Public: only levels that are REAL support/resistance on this market.
+
+    Used by the chart renderer — if a market has no level that has been touched
+    and rejected repeatedly, this returns an empty list and nothing is drawn.
+    """
+    if not candles or len(candles) < 30:
+        return []
+    x = Ctx(candles)
+    i = x.n - 1
+    levels, _tol, a = _z_levels(x, i)
+    close = x.cl[i]
+    strong = [lv for lv in levels
+              if lv["touches"] >= min_touches and lv["rejections"] >= min_rejections
+              and abs(close - lv["price"]) / a <= max_dist_atr]
+    out = []
+    for lv in strong:
+        out.append({
+            "price": lv["price"],
+            "touches": lv["touches"],
+            "rejections": lv["rejections"],
+            "kind": "R" if lv["price"] >= close else "S",
+            "dist_atr": abs(close - lv["price"]) / a,
+        })
+    out.sort(key=lambda l: -(2 * l["rejections"] + l["touches"]))
+    return out[:limit]
+
+
 def zone_sniper(candles, entry_ts=None):
     if not candles or len(candles) < ZONE_MIN_CANDLES:
         return None
@@ -921,14 +997,23 @@ def zone_sniper(candles, entry_ts=None):
     if w_sum <= 0 or not contrib:
         return None
     score /= w_sum
-    direction = "CALL" if score >= 0 else "PUT"
     d = 1 if score >= 0 else -1
+
+    # A confirmed rejection reversal off a real level outranks the blended vote.
+    rev_v, rev_lv = _z_rev_confirm(x, i, z)
+    override = abs(rev_v) >= 0.60
+    if override:
+        d = 1 if rev_v > 0 else -1
+    direction = "CALL" if d > 0 else "PUT"
 
     spoke = sum(c["weight"] for c in contrib) or 1e-12
     agree = sum(c["weight"] for c in contrib if (c["value"] > 0) == (d > 0)) / spoke
 
-    lv = z["near"]
-    if at_zone >= 0.35 and lv:
+    lv = rev_lv if override else z["near"]
+    if override:
+        quality = min(1.0, (lv["touches"] + 1.5 * lv["rejections"]) / 6.0)
+        mode = "rejection-reversal"
+    elif at_zone >= 0.35 and lv:
         quality = min(1.0, (lv["touches"] + 1.5 * lv["rejections"]) / 6.0)
         mode = "zone-reversal"
     else:
@@ -936,9 +1021,13 @@ def zone_sniper(candles, entry_ts=None):
         mode = "trend-continuation"
 
     strength = min(1.0, abs(score) * 2.3)
+    if override:
+        strength = max(strength, abs(rev_v))
     confidence = min(95.0, 100.0 * (0.48 * strength +
                                     0.32 * max(0.0, (agree - 0.5) * 2.0) +
                                     0.20 * quality))
+    if override:
+        confidence = min(95.0, max(confidence, 70.0 + 20.0 * (abs(rev_v) - 0.6) / 0.4))
 
     supporting = sorted(
         (c for c in contrib if (c["value"] > 0) == (d > 0)),
@@ -951,12 +1040,16 @@ def zone_sniper(candles, entry_ts=None):
     if lv:
         lvl_txt = (f"nearest level {_z_fmt(lv['price'])} "
                    f"({lv['touches']} touches, {lv['rejections']} rejections, "
-                   f"{z['near_dist']:.2f} ATR away)")
+                   f"{abs(x.cl[i] - lv['price']) / z['a']:.2f} ATR away)")
     else:
         lvl_txt = "no clean level in range"
+    if override:
+        head = (f"Confirmed rejection reversal at {_z_fmt(lv['price'])} "
+                f"({lv['touches']} touches, {lv['rejections']} prior rejections)")
+    else:
+        head = f"{mode.replace('-', ' ').capitalize()} setup \u2014 {lvl_txt}"
     reason = (
-        f"{mode.replace('-', ' ').capitalize()} setup \u2014 {lvl_txt}: " +
-        ", ".join(bits) +
+        head + ": " + ", ".join(bits) +
         f" \u2014 {n_agree}/{len(contrib)} active filters agree, so {direction} "
         f"is preferred for the next candle."
     )
@@ -969,6 +1062,7 @@ def zone_sniper(candles, entry_ts=None):
         "at_zone": at_zone,
         "agree": agree,
         "zone_quality": quality,
+        "reversal_confirmed": bool(override),
         "level": (_z_fmt(lv["price"]) if lv else None),
         "level_touches": (lv["touches"] if lv else 0),
         "level_rejections": (lv["rejections"] if lv else 0),
@@ -1042,14 +1136,14 @@ STRATEGIES = {
     "zone_sniper": {
         "key": "zone_sniper",
         "name": "Zone Reversal Sniper",
-        "tagline": "S/R + trendline + multi-rejection levels \u00b7 14 filters",
+        "tagline": "S/R + trendline + multi-rejection levels \u00b7 15 filters",
         "min_confidence": 68.0,
         "min_candles": ZONE_MIN_CANDLES,
         "fn": zone_sniper,
         "about": (
             "\U0001f3f0 Zone Reversal Sniper \u2014 level-based next-candle engine\n\n"
             "This engine does not chase momentum. It first maps where price has actually "
-            "reacted before, then asks 14 filters which way the NEXT 1-minute candle should "
+            "reacted before, then asks 15 filters which way the NEXT 1-minute candle should "
             "go from that spot.\n\n"
             "\U0001f9f1 Level engine\n"
             "\u2022 Swing pivots (2 left / 2 right) are clustered into price zones with an "
@@ -1071,9 +1165,15 @@ STRATEGIES = {
             "pressure, streak exhaustion)\n"
             "Fading a level that is not there, and buying a breakout that is really a level "
             "test, are the two classic 1-minute mistakes \u2014 so neither style is hard-coded.\n\n"
-            "\U0001f52c Filters in full (14)\n"
-            "Horizontal S/R zone \u00b7 Multi-rejection level \u00b7 Trendline S/R touch \u00b7 "
-            "False break / liquidity sweep \u00b7 Rejection candle at zone \u00b7 RSI divergence at "
+            "\u26a1 Confirmed rejection reversal (highest conviction)\n"
+            "If a candle hits a real level with a genuine wick, closes away from it, and the "
+            "NEXT candle confirms by closing further in the reversal direction, that setup "
+            "overrides the blended vote and the trade is taken against the level. No "
+            "confirmation candle means no reversal trade \u2014 a single touch is never enough.\n\n"
+            "\U0001f52c Filters in full (15)\n"
+            "Horizontal S/R zone \u00b7 Multi-rejection level \u00b7 Confirmed rejection reversal \u00b7 "
+            "Trendline S/R touch \u00b7 "
+            "False break / sweep \u00b7 Rejection candle at zone \u00b7 RSI divergence at "
             "swing \u00b7 Round-number level \u00b7 Bollinger + RSI extreme \u00b7 EMA 8/21/50 stack \u00b7 "
             "Break and retest hold \u00b7 5-minute alignment \u00b7 3-candle push + MACD \u00b7 "
             "Close-position pressure \u00b7 Streak exhaustion\n\n"

@@ -1,18 +1,19 @@
 """SignalMaster Pro — neon HUD candlestick chart PNG generator.
 
 Layout (matches the SignalMaster Pro dashboard design):
-    * Top header bar  : hex logo + SignalMaster Pro | market pill (+OTC badge) |
-                        CALL/PUT badge + ACCURACY badge
-    * Main price panel: candles + EMA 7 / EMA 21 + support/resistance zones +
-                        rejection zone + ENTRY marker + BUY/SELL arrow +
-                        last-price tag  (+ WIN/LOSS ribbon on the result image)
+    * Top header bar  : target logo + SignalMaster Pro | market pill (+OTC badge)
+                        | CALL/PUT badge
+    * Main price panel: candles + EMA 7 / EMA 21 + real support/resistance levels
+                        (drawn only when the market actually has one) + rejection
+                        zone + ENTRY marker + BUY/SELL arrow + last-price tag.
+                        On the result image the entry candle itself is boxed and
+                        the WIN / MTG WIN / LOSS label sits right under it.
     * Volume panel    : coloured volume bars + time axis
     * Footer          : Powered by SignalMaster Pro | Developed by : @iamhear1
 """
 import io
-import time
 import math
-from datetime import datetime, timezone, timedelta
+import time
 
 import matplotlib
 matplotlib.use("Agg")
@@ -140,7 +141,7 @@ def render_chart(candles, title, badge=None, *, payout=0, entry_ts=None,
     """Render the dashboard PNG and return raw bytes.
 
     badge        : "CALL" / "PUT"  (the signal direction)
-    payout       : int payout % (shown as ACCURACY)
+    payout       : int payout % (accepted for compatibility, not drawn)
     entry_ts     : unix ts of the entry candle (used to place the ENTRY marker)
     entry_str    : "HH:MM" entry time
     market_name  : market display name (falls back to `title`)
@@ -183,7 +184,6 @@ def render_chart(candles, title, badge=None, *, payout=0, entry_ts=None,
         fig.savefig(buf, format="png", facecolor=BG); plt.close(fig)
         return buf.getvalue()
 
-    opens = [c["open"] for c in data]
     highs = [c["high"] for c in data]
     lows = [c["low"] for c in data]
     closes = [c["close"] for c in data]
@@ -215,26 +215,30 @@ def render_chart(candles, title, badge=None, *, payout=0, entry_ts=None,
         ax.plot(valid, [bb_lo[i] for i in valid], color=REJ_COL, linewidth=0.9,
                 linestyle=(0, (1, 2)), alpha=0.55, zorder=2)
 
-    # ---- support / resistance zones -------------------------------------
-    look = highs[-45:] if n >= 45 else highs
-    look_lo = lows[-45:] if n >= 45 else lows
-    res = max(look); sup = min(look_lo)
+    # ---- support / resistance zones (only REAL levels) ------------------
+    # A market with no repeatedly-rejected level gets no lines at all.
+    zlevels = []
+    try:
+        from strategies import zone_levels
+        zlevels = zone_levels(candles)
+    except Exception:
+        zlevels = []
+    y_lo, y_hi = min(lows) - span * 0.05, max(highs) + span * 0.05
     zh = span * 0.012
-    ax.axhspan(res - zh, res + zh, color=RES_COL, alpha=0.10, zorder=1)
-    ax.axhspan(sup - zh, sup + zh, color=SUP_COL, alpha=0.10, zorder=1)
-    ax.axhline(res, color=RES_COL, linewidth=0.9, linestyle=(0, (6, 4)),
-               alpha=0.75, zorder=2)
-    ax.axhline(sup, color=SUP_COL, linewidth=0.9, linestyle=(0, (6, 4)),
-               alpha=0.75, zorder=2)
-    mid_r = (res + closes[-1]) / 2 if res > closes[-1] else res
-    ax.axhline(mid_r, color=RES_COL, linewidth=0.7, linestyle=(0, (6, 5)),
-               alpha=0.35, zorder=2)
-    ax.text(-0.4, res, " R", color=RES_COL, fontsize=7.5, ha="left", va="bottom",
-            family=FMONO, alpha=0.9, zorder=3)
-    ax.text(-0.4, sup, " S", color=SUP_COL, fontsize=7.5, ha="left", va="bottom",
-            family=FMONO, alpha=0.9, zorder=3)
-    ax.text(-0.4, mid_r, " R", color=RES_COL, fontsize=7.5, ha="left", va="bottom",
-            family=FMONO, alpha=0.6, zorder=3)
+    drew_res = drew_sup = False
+    for lv in zlevels:
+        p = lv["price"]
+        if not (y_lo <= p <= y_hi):
+            continue
+        is_res = lv["kind"] == "R"
+        col = RES_COL if is_res else SUP_COL
+        ax.axhspan(p - zh, p + zh, color=col, alpha=0.10, zorder=1)
+        ax.axhline(p, color=col, linewidth=0.9, linestyle=(0, (6, 4)),
+                   alpha=0.75, zorder=2)
+        ax.text(-0.4, p, f" {lv['kind']}", color=col, fontsize=7.5, ha="left",
+                va="bottom", family=FMONO, alpha=0.9, zorder=3)
+        drew_res = drew_res or is_res
+        drew_sup = drew_sup or not is_res
 
     ax.plot(xs, ema_m, color=MA_MID, linewidth=2.6, alpha=0.95, zorder=3,
             solid_capstyle="round")
@@ -255,11 +259,13 @@ def render_chart(candles, title, badge=None, *, payout=0, entry_ts=None,
     handles = [
         Line2D([], [], color=MA_FAST, lw=2.4, label="EMA 7"),
         Line2D([], [], color=MA_MID, lw=2.4, label="EMA 21"),
-        Line2D([], [], color=RES_COL, lw=2.4, label="Resistance Zone"),
-        Line2D([], [], color=SUP_COL, lw=2.4, label="Support Zone"),
-        Line2D([], [], color=REJ_COL, lw=1.2, linestyle=(0, (1, 2)),
-               label="Rejection Zone"),
     ]
+    if drew_res:
+        handles.append(Line2D([], [], color=RES_COL, lw=2.4, label="Resistance Zone"))
+    if drew_sup:
+        handles.append(Line2D([], [], color=SUP_COL, lw=2.4, label="Support Zone"))
+    handles.append(Line2D([], [], color=REJ_COL, lw=1.2, linestyle=(0, (1, 2)),
+                          label="Rejection Zone"))
     leg = ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(0.012, 0.955),
                     frameon=True, fontsize=8.5, labelspacing=0.42,
                     handlelength=1.9, borderpad=0.7)
@@ -319,13 +325,23 @@ def render_chart(candles, title, badge=None, *, payout=0, entry_ts=None,
     ax.axhline(last_price, color=ACCENT, linewidth=0.7, alpha=0.5,
                linestyle=(0, (4, 3)), zorder=2)
 
-    # ---- result ribbon (top-right of chart) -----------------------------
+    # ---- result: mark the entry candle + label under it ------------------
     if is_result:
         rc = _result_color(result)
-        ax.text(0.988, 0.955, _result_label(result), transform=ax.transAxes,
-                color="#04121b", fontsize=13, fontweight="bold", ha="right",
-                va="center", family=FMONO, zorder=12,
-                bbox=dict(boxstyle="round,pad=0.45", facecolor=rc, edgecolor="none"))
+        mx = entry_x if (entry_x is not None and 0 <= entry_x < n) else n - 1
+        ec = data[mx]
+        pad_y = span * 0.02
+        ax.add_patch(Rectangle((mx - 0.6, ec["low"] - pad_y), 1.20,
+                               (ec["high"] - ec["low"]) + 2 * pad_y,
+                               facecolor=rc, alpha=0.18, edgecolor=rc,
+                               linewidth=1.7, linestyle=(0, (3, 2)), zorder=7))
+        y_lbl = ec["low"] - span * 0.115
+        ax.vlines(mx, y_lbl + span * 0.028, ec["low"] - pad_y, color=rc,
+                  linewidth=1.1, alpha=0.9, linestyle=(0, (3, 2)), zorder=8)
+        ax.text(mx, y_lbl, _result_label(result), color="#04121b", fontsize=12,
+                fontweight="bold", ha="center", va="center", family=FMONO, zorder=13,
+                bbox=dict(boxstyle="round,pad=0.45", facecolor=rc,
+                          edgecolor="#04121b", linewidth=1.6))
 
     # ---- axis limits / ticks --------------------------------------------
     ax.set_xlim(-0.6, n + 6.2)
@@ -365,16 +381,29 @@ def render_chart(candles, title, badge=None, *, payout=0, entry_ts=None,
     _fglow(fig, hx, hy, hw, hh, NEON_CYAN, layers=2, spread=0.0022)
     _fbox(fig, hx, hy, hw, hh, PANEL, "#2f5a7a", lw=1.3, rs=0.010, z=2)
 
-    # -- left: hex logo + brand (no version badge)
-    fig.patches.append(RegularPolygon(
-        (0.045, 0.934), numVertices=6, radius=0.016, orientation=0,
-        transform=fig.transFigure, facecolor="#0d1c2c", edgecolor=NEON_CYAN,
-        linewidth=1.6, zorder=4))
-    for dxy in ((0.0, 0.006), (-0.005, -0.004), (0.005, -0.004)):
-        fig.patches.append(plt.Circle(
-            (0.045 + dxy[0], 0.934 + dxy[1]), 0.0026, transform=fig.transFigure,
-            facecolor=NEON_CYAN, edgecolor="none", zorder=5))
-    t_a = fig.text(0.066, 0.934, BRAND_A, color=TEXT, fontsize=19,
+    # -- left: crosshair/target logo mark + brand
+    from matplotlib.patches import Ellipse
+    lx, ly = 0.045, 0.934
+    ar = fig.get_figwidth() / fig.get_figheight()       # keep circles round
+    r_out = 0.017
+    fig.patches.append(Ellipse((lx, ly), 2 * r_out / ar, 2 * r_out,
+                               transform=fig.transFigure, facecolor="#0d1c2c",
+                               edgecolor=NEON_CYAN, linewidth=1.7, zorder=4))
+    fig.patches.append(Ellipse((lx, ly), 2 * r_out * 0.52 / ar, 2 * r_out * 0.52,
+                               transform=fig.transFigure, facecolor="none",
+                               edgecolor=NEON_CYAN, linewidth=1.2, alpha=0.85,
+                               zorder=5))
+    fig.patches.append(Ellipse((lx, ly), 2 * r_out * 0.16 / ar, 2 * r_out * 0.16,
+                               transform=fig.transFigure, facecolor=NEON_CYAN,
+                               edgecolor="none", zorder=6))
+    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        x0 = lx + dx * r_out * 0.62 / ar
+        y0 = ly + dy * r_out * 0.62
+        x1 = lx + dx * r_out * 1.12 / ar
+        y1 = ly + dy * r_out * 1.12
+        fig.add_artist(Line2D([x0, x1], [y0, y1], transform=fig.transFigure,
+                              color=NEON_CYAN, linewidth=1.5, zorder=6))
+    t_a = fig.text(0.068, 0.934, BRAND_A, color=TEXT, fontsize=19,
                    fontweight="bold", va="center", ha="left", family=FSANS, zorder=5)
     fig.canvas.draw()
     bb = t_a.get_window_extent(renderer=fig.canvas.get_renderer())
@@ -402,40 +431,16 @@ def render_chart(candles, title, badge=None, *, payout=0, entry_ts=None,
         fig.text(bx + 0.015, 0.9345, "OTC", color="#f5a623", fontsize=9.5,
                  fontweight="bold", ha="center", va="center", family=FMONO, zorder=5)
 
-    # -- right: direction badge + accuracy badge
+    # -- right: direction badge (no accuracy badge)
     d_col = CALL_COL if direction == "CALL" else PUT_COL
     tri = "\u25b2" if direction == "CALL" else "\u25bc"
-    dbx, dbw = 0.775, 0.098
+    dbw = 0.108
+    dbx = 0.966 - dbw
     _fglow(fig, dbx, 0.906, dbw, 0.056, d_col, layers=2, spread=0.0018)
     _fbox(fig, dbx, 0.906, dbw, 0.056, "#14070d", d_col, lw=1.5, rs=0.014, z=3)
     fig.text(dbx + dbw / 2, 0.934, f"{tri} {direction or '--'}", color=d_col,
              fontsize=17, fontweight="bold", ha="center", va="center",
              family=FSANS, zorder=5)
-
-    abx, abw = 0.886, 0.083
-    _fbox(fig, abx, 0.906, abw, 0.056, "#150a12", NEON_PINK, lw=1.4, rs=0.014, z=3)
-    fig.text(abx + abw / 2, 0.948, "ACCURACY", color=DIM, fontsize=8.5,
-             fontweight="bold", ha="center", va="center", family=FMONO, zorder=5)
-    fig.text(abx + abw / 2, 0.9235, f"{int(payout)}%", color=TEXT, fontsize=15,
-             fontweight="bold", ha="center", va="center", family=FSANS, zorder=5)
-
-    # =====================================================================
-    #  ENGINE chip (drawn inside the price panel, both image types)
-    # =====================================================================
-    def engine_section(x, y, w=0.215, h=0.052):
-        """Premium 'ENGINE' chip — SignalMaster Ultra Volt."""
-        _rbox(ax, x, y, w, h, PANEL2, ENGINE_COL, lw=1.2, alpha=0.92, z=10, rs=0.03)
-        ax.text(x + w / 2, y + h * 0.66, f"{BRAND_A} Ultra Volt",
-                transform=ax.transAxes, color=ENGINE_COL, fontsize=10.5,
-                fontweight="bold", ha="center", va="center", family=FSANS, zorder=11)
-        ax.text(x + w / 2, y + h * 0.24, "\u25c6  PRECISION ENGINE  \u25c6",
-                transform=ax.transAxes, color=DIM, fontsize=7,
-                fontweight="bold", ha="center", va="center", family=FMONO, zorder=11)
-
-    if not is_result:
-        engine_section(0.012, 0.022)
-    else:
-        engine_section(0.012, 0.022)
 
     # =====================================================================
     #  FOOTER

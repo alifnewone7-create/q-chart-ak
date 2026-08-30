@@ -42,6 +42,24 @@ def bouncy(n=120, base=1.1000, amp=0.0030, seed=3):
     return series(cl)
 
 
+def realistic(n=140, seed=1, base=1.10, amp=0.0030):
+    """Oscillating range with realistic wicks (what a real OTC feed looks like)."""
+    r = random.Random(seed)
+    t0 = int(time.time()) - n * 60
+    out, p = [], base
+    for i in range(n):
+        target = base + amp * math.sin(i / 7.0)
+        c = p + (target - p) * 0.45 + r.gauss(0, amp * 0.10)
+        o = p
+        w = abs(r.gauss(0, amp * 0.12))
+        h = max(o, c) + abs(r.gauss(0, amp * 0.10)) + w * 0.5
+        l = min(o, c) - abs(r.gauss(0, amp * 0.10)) - w * 0.5
+        out.append({"time": t0 + i * 60, "open": o, "high": h, "low": l,
+                    "close": c, "volume": 1000})
+        p = c
+    return out
+
+
 def trending(n=100, base=1.1000, step=0.00025, seed=5):
     r = random.Random(seed)
     cl, p = [], base
@@ -58,7 +76,7 @@ assert st["min_candles"] == ZONE_MIN_CANDLES == 60
 assert st["min_confidence"] == 68.0
 assert strategies.ORDER == ["classic", "otc_sniper", "zone_sniper"]
 for needle in ("Multi-rejection", "Trendline", "S/R", "divergence", "sweep",
-               "Confidence", "14"):
+               "Confidence", "15", "Confirmed rejection reversal"):
     assert needle in st["about"], needle
 print("OK registry + about text")
 
@@ -91,14 +109,14 @@ print(f"OK 360 markets  {seen}  modes={sorted(modes)}")
 
 # 4) every filter is finite and inside [-1, 1] on every market
 for seed in range(40):
-    for gen in (walk, bouncy, trending):
-        c = gen(seed=seed) if gen is not walk else walk(seed=seed)
+    for gen in (walk, bouncy, trending, realistic):
+        c = gen(seed=seed)
         x = Ctx(c); i = x.n - 1
         z = strategies._z_context(x, i)
         for key, label, fn, wz, wo in ZONE_FILTERS:
             v = fn(x, i, z)
             assert isinstance(v, float) and -1.0 <= v <= 1.0 and v == v, (key, v)
-print("OK all 14 filters bounded")
+print(f"OK all {len(ZONE_FILTERS)} filters bounded")
 
 # 5) multi-rejection filter actually detects a repeatedly rejected level
 c = bouncy(160, seed=11)
@@ -129,6 +147,34 @@ for seed in range(60):
 assert sup_n + res_n > 5, (sup_n, res_n)
 assert sup_calls == sup_n and res_puts == res_n, (sup_calls, sup_n, res_puts, res_n)
 print(f"OK zone polarity  support->CALL {sup_calls}/{sup_n}  resistance->PUT {res_puts}/{res_n}")
+
+# 6b) confirmed rejection reversal: fires, and only with a confirmation candle
+rev_hits = 0
+for seed in range(200):
+    c = realistic(seed=seed)
+    r = zone_sniper(c)
+    if r["mode"] == "rejection-reversal":
+        rev_hits += 1
+        assert r["reversal_confirmed"] is True
+        assert r["confidence"] >= 70.0, r["confidence"]
+        assert "Confirmed rejection reversal" in r["reason"]
+assert rev_hits > 20, f"confirmed rejection reversal too rare: {rev_hits}/200"
+print(f"OK confirmed rejection reversal fired on {rev_hits}/200 oscillating markets")
+
+# 6c) a rejection with NO confirming candle must not trade the reversal
+checked = 0
+for seed in range(200):
+    c = realistic(seed=seed)
+    x = Ctx(c); i = x.n - 1
+    z = strategies._z_context(x, i)
+    v, lv = strategies._z_rev_confirm(x, i, z)
+    if v == 0:
+        continue
+    checked += 1
+    # the confirming candle must close in the reversal direction
+    assert (x.body[i] > 0) == (v > 0), (v, x.body[i])
+assert checked > 20, checked
+print(f"OK reversal always has a confirming candle ({checked} cases)")
 
 # 7) trendline filter fires on a clean rising channel low touch
 c = trending(120, seed=9)

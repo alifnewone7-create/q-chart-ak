@@ -72,11 +72,62 @@ check(render_chart(make(70, tight=True), "GBPUSD (OTC) · CALL", badge="CALL",
 png = render_chart(make(1), "TINY", badge="CALL", payout=70, market_name="TINY")
 assert png[:8] == b"\x89PNG\r\n\x1a\n"; print("OK 1-candle fallback")
 
+# no S/R lines on a market without a real level
+import matplotlib
+import strategies
+def clean_trend(n=90):
+    t0 = int(time.time()) - n * 60
+    out, p = [], 1.5000
+    for i in range(n):
+        o = p; c = o + 0.0004; h = c + 0.00005; l = o - 0.00005
+        out.append({"time": t0+i*60, "open": o, "high": h, "low": l,
+                    "close": c, "volume": 900})
+        p = c
+    return out
+tr = clean_trend()
+assert strategies.zone_levels(tr) == [], "levels found on a clean staircase trend"
+png = render_chart(tr, "NOLEVEL", badge="CALL", payout=80, market_name="NOLEVEL")
+fig = held["fig"]
+sr_lines = 0
+labels = set()
+for a in fig.axes:
+    for ln in a.lines:
+        col = matplotlib.colors.to_hex(ln.get_color()).lower()
+        if col in (charting.RES_COL.lower(), charting.SUP_COL.lower()):
+            sr_lines += 1
+    for t in a.texts:
+        labels.add((t.get_text() or "").strip())
+assert sr_lines == 0, f"{sr_lines} S/R lines drawn on a market with no level"
+leg = [t.get_text() for a in fig.axes if a.get_legend() for t in a.get_legend().get_texts()]
+assert "Resistance Zone" not in leg and "Support Zone" not in leg, leg
+_orig(fig); held["fig"] = None
+print("OK no-level market -> no S/R lines, legend:", leg)
+
+# result label is drawn under the entry candle, not as a top-right ribbon
+c = make(70); lt = c[-1]["time"]
+png = render_chart(c, "X", badge="PUT", payout=85, entry_ts=c[-4]["time"],
+                   market_name="X", result="WIN", stats={"wins":3,"losses":1,"total":4})
+fig = held["fig"]
+main = fig.axes[0]
+tag = [t for t in main.texts if (t.get_text() or "").strip() == "WIN"]
+assert tag, "WIN label missing from the price panel"
+tx, ty = tag[0].get_position()
+entry_lo = c[-4]["low"]
+assert abs(tx - (len(c[-70:]) - 4)) < 0.6, f"WIN label not at the entry candle x ({tx})"
+assert ty < entry_lo, "WIN label is not below the entry candle"
+boxes = [p for p in main.patches if getattr(p, "get_linestyle", None)
+         and p.get_linestyle() not in ("solid", "-")]
+assert boxes, "entry candle highlight box missing"
+_orig(fig); held["fig"] = None
+print("OK result label sits under the marked entry candle")
+
 src = open("/app/backend/charting.py").read()
 import re as _re
 code = _re.sub(r'"""[\s\S]*?"""', "", src)
 code = _re.sub(r"#.*", "", code)
 assert "LOSSES" not in code, "LOSSES text present"
-assert code.count("engine_section(") >= 2, "engine_section not on both branches"
+assert "engine_section" not in code, "engine chip still drawn"
+assert "Ultra Volt" not in src, "Ultra Volt chip still present"
+assert "ACCURACY" not in src, "accuracy badge still on the chart"
 assert "TaNix" not in src, "old brand present"
 print("OK source assertions")

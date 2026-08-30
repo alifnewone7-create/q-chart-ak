@@ -784,7 +784,7 @@ def test_render_chart_signal_and_result_pngs():
     assert len(png_res) > 1000
 
 
-def test_charting_source_no_losses_box_engine_on_both():
+def test_charting_source_no_losses_box_no_engine_chip():
     src = (BACKEND_DIR / "charting.py").read_text()
     # Strip comments + docstrings, then confirm no LOSSES box is drawn in code
     import re as _re
@@ -794,5 +794,7 @@ def test_charting_source_no_losses_box_engine_on_both():
     # No LOSSES text drawn anywhere (the code comment above the WINS card also
     # says "losses are intentionally not shown" -> stripped above)
     assert "LOSSES" not in code
-    # ENGINE card helper drawn on BOTH images (signal + result branches)
-    assert code.count("engine_section(") >= 2
+    # The "Ultra Volt" engine chip and the ACCURACY badge were removed by request
+    assert "engine_section" not in code
+    assert "Ultra Volt" not in src
+    assert "ACCURACY" not in src
