@@ -118,8 +118,12 @@ assert ty < entry_lo, "WIN label is not below the entry candle"
 boxes = [p for p in main.patches if getattr(p, "get_linestyle", None)
          and p.get_linestyle() not in ("solid", "-")]
 assert boxes, "entry candle highlight box missing"
+# ENTRY marker and the BUY/SELL arrow pill must NOT appear on a result image
+res_labels = {(t.get_text() or "").strip() for t in main.texts}
+assert "ENTRY" not in res_labels, "ENTRY marker still drawn on the result image"
+assert not res_labels & {"BUY", "SELL"}, "BUY/SELL pill still drawn on the result image"
 _orig(fig); held["fig"] = None
-print("OK result label sits under the marked entry candle")
+print("OK result label sits under the marked entry candle, no ENTRY/BUY/SELL")
 
 src = open("/app/backend/charting.py").read()
 import re as _re

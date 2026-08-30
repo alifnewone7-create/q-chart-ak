@@ -287,7 +287,7 @@ def render_chart(candles, title, badge=None, *, payout=0, entry_ts=None,
         if entry_x is None and entry_ts > data[-1]["time"]:
             entry_x = n  # upcoming candle (signal image)
     ref_price = closes[-1]
-    if entry_x is not None:
+    if entry_x is not None and not is_result:
         y_arrow = ref_price + span * 0.085
         ax.vlines(entry_x, ref_price, y_arrow, color=GOLD, linewidth=0.9,
                   alpha=0.55, linestyle=(0, (3, 3)), zorder=8)
