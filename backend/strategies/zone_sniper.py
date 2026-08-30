@@ -10,7 +10,9 @@ from .common import (
     _m_macd,
     _m_momentum,
     _m_rsi_extreme,
+    _m_squeeze_break,
     _wick_pair,
+    no_trade,
 )
 
 ZONE_MIN_CANDLES = 60
@@ -354,6 +356,98 @@ def _f_exhaustion(x, i, z):
     return _m_exhaustion(x, i)
 
 
+def _f_fresh_zone(x, i, z):
+    """Fresh retest of a proven level beats a level being ground down."""
+    lv = z["near"]
+    if not lv or z["near_dist"] > 1.0 or lv["touches"] < 2:
+        return 0.0
+    p, tol = lv["price"], z["tol"]
+    recent = sum(1 for j in range(max(0, i - 10), i)
+                 if x.l[j] - tol <= p <= x.h[j] + tol)
+    sign = 1.0 if p <= x.cl[i] else -1.0
+    if recent <= 1:
+        return sign * 0.8          # fresh retest — strongest
+    if recent <= 3:
+        return sign * 0.4
+    if recent >= 6:
+        return -sign * 0.3         # hammered level — likely to break
+    return 0.0
+
+
+def _f_wick_cluster(x, i, z):
+    """Several genuine wicks poking the level and closing away = defended."""
+    lv = z["near"]
+    if not lv or z["near_dist"] > 1.2:
+        return 0.0
+    p, tol = lv["price"], z["tol"]
+    below = p <= x.cl[i]
+    cnt = 0
+    for j in range(max(0, i - 15), i + 1):
+        lw, uw = _wick_pair(x, j)
+        if below and x.l[j] <= p + tol and x.cl[j] > p and lw > 0.35:
+            cnt += 1
+        elif not below and x.h[j] >= p - tol and x.cl[j] < p and uw > 0.35:
+            cnt += 1
+    if cnt < 2:
+        return 0.0
+    sign = 1.0 if below else -1.0
+    return _clamp(sign * (0.45 + 0.18 * min(4, cnt - 1)))
+
+
+def _f_channel(x, i, z):
+    """Parallel trendline channel — buy the floor, sell the ceiling."""
+    ts, tr = z["tl_sup"], z["tl_res"]
+    if not ts or not tr:
+        return 0.0
+    a = z["a"]
+    s1, b1 = ts
+    s2, b2 = tr
+    if abs(s1 - s2) > 0.35 * max(abs(s1), abs(s2), 0.05 * a):
+        return 0.0
+    lo = s1 * i + b1
+    hi = s2 * i + b2
+    width = hi - lo
+    if width < 1.2 * a:
+        return 0.0
+    pos = (x.cl[i] - lo) / width
+    if pos <= 0.18:
+        return 0.85
+    if pos >= 0.82:
+        return -0.85
+    if pos <= 0.32:
+        return 0.4
+    if pos >= 0.68:
+        return -0.4
+    return 0.0
+
+
+def _f_confluence(x, i, z):
+    """Horizontal level + trendline + round number stacking within 0.5 ATR."""
+    import math as _math
+    lv = z["near"]
+    if not lv or z["near_dist"] > 0.9:
+        return 0.0
+    a = z["a"]
+    p = lv["price"]
+    stack = 1
+    for tl in (z["tl_sup"], z["tl_res"]):
+        if tl and abs((tl[0] * i + tl[1]) - p) <= 0.5 * a:
+            stack += 1
+    target = 3.0 * a
+    mag = 10 ** _math.floor(_math.log10(max(target, 1e-12)))
+    step = min((mag, 2 * mag, 5 * mag, 10 * mag), key=lambda m: abs(m - target))
+    if abs(round(p / step) * step - p) <= 0.5 * a:
+        stack += 1
+    if stack < 2:
+        return 0.0
+    sign = 1.0 if p <= x.cl[i] else -1.0
+    return _clamp(sign * (0.35 + 0.3 * (stack - 1)))
+
+
+def _f_squeeze_release(x, i, z):
+    return _m_squeeze_break(x, i)
+
+
 # key, label, fn, weight AT a level, weight in OPEN space
 ZONE_FILTERS = [
     ("sr_zone",    "Horizontal S/R zone",        _f_sr_zone,               0.14, 0.03),
@@ -371,6 +465,11 @@ ZONE_FILTERS = [
     ("momentum",   "3-candle push + MACD",       _f_momentum,              0.01, 0.15),
     ("pressure",   "Close-position pressure",    _f_close_pressure,        0.01, 0.09),
     ("exhaust",    "Streak exhaustion",          _f_exhaustion,            0.00, 0.05),
+    ("fresh",      "Fresh vs ground-down zone",  _f_fresh_zone,            0.06, 0.01),
+    ("wick_clust", "Wick cluster at level",      _f_wick_cluster,          0.07, 0.01),
+    ("channel",    "Price channel position",     _f_channel,               0.04, 0.04),
+    ("confluence", "Level confluence stack",     _f_confluence,            0.06, 0.01),
+    ("squeeze",    "Squeeze-release breakout",   _f_squeeze_release,       0.02, 0.06),
 ]
 
 
@@ -405,6 +504,16 @@ _ZONE_PHRASES = {
                  "the last candles closed near their lows"),
     "exhaust": ("the bearish streak looks exhausted",
                 "the bullish streak looks exhausted"),
+    "fresh": ("a proven support is getting its first fresh retest",
+              "a proven resistance is getting its first fresh retest"),
+    "wick_clust": ("a cluster of lower wicks shows buyers defending this level",
+                   "a cluster of upper wicks shows sellers capping this level"),
+    "channel": ("price is at the floor of a parallel channel",
+                "price is at the ceiling of a parallel channel"),
+    "confluence": ("horizontal level, trendline and round number stack up as support",
+                   "horizontal level, trendline and round number stack up as resistance"),
+    "squeeze": ("a volatility squeeze just released upward",
+                "a volatility squeeze just released downward"),
 }
 
 
@@ -441,11 +550,49 @@ def zone_levels(candles, min_touches=3, min_rejections=2, limit=3,
     return out[:limit]
 
 
+def zone_trendlines(candles, min_pivots=3, max_resid_atr=0.9):
+    """Public: drawable trendlines fitted through recent swing points.
+
+    Used by the chart renderer. A line is returned only when at least 3 recent
+    swing points fit it tightly (residual < 0.9 ATR) — that is what makes it a
+    REAL trendline (channel floor through lows / channel ceiling through highs)
+    rather than a random ruler stroke. Tries the last 4 pivots first, then the
+    last 3. Anchor indices are absolute positions in the passed candle list.
+    """
+    if not candles or len(candles) < 30:
+        return []
+    x = Ctx(candles)
+    i = x.n - 1
+    a = x.atr(14)[i] or 1e-12
+    hs, ls = _z_pivots(x, i)
+    out = []
+    for pts, kind in ((ls, "S"), (hs, "R")):
+        if len(pts) < min_pivots:
+            continue
+        for take in (4, 3):
+            sel = pts[-take:]
+            if len(sel) < min_pivots:
+                continue
+            fit = _z_fit(sel)
+            if not fit:
+                continue
+            slope, b = fit
+            resid = max(abs(p - (slope * j + b)) for j, p in sel)
+            if resid > max_resid_atr * a:
+                continue
+            out.append({"kind": kind, "slope": slope, "intercept": b,
+                        "j0": sel[0][0], "j1": i})
+            break
+    return out
+
+
 def zone_sniper(candles, entry_ts=None):
     if not candles or len(candles) < ZONE_MIN_CANDLES:
         return None
     x = Ctx(candles)
     i = x.n - 1
+    if no_trade(x, i)[0]:
+        return None
     z = _z_context(x, i)
     at_zone = z["at_zone"]
 
@@ -544,7 +691,7 @@ def zone_sniper(candles, entry_ts=None):
 META = {
     "key": "zone_sniper",
     "name": "Zone Reversal Sniper",
-    "tagline": "S/R + trendline + multi-rejection levels \u00b7 15 filters",
+    "tagline": "S/R + trendline + multi-rejection levels \u00b7 20 filters \u00b7 no-trade gate",
     "min_confidence": 68.0,
     "min_candles": ZONE_MIN_CANDLES,
     "fn": zone_sniper,
@@ -578,13 +725,19 @@ META = {
         "NEXT candle confirms by closing further in the reversal direction, that setup "
         "overrides the blended vote and the trade is taken against the level. No "
         "confirmation candle means no reversal trade \u2014 a single touch is never enough.\n\n"
-        "\U0001f52c Filters in full (15)\n"
+        "\U0001f52c Filters in full (20)\n"
         "Horizontal S/R zone \u00b7 Multi-rejection level \u00b7 Confirmed rejection reversal \u00b7 "
         "Trendline S/R touch \u00b7 "
         "False break / sweep \u00b7 Rejection candle at zone \u00b7 RSI divergence at "
         "swing \u00b7 Round-number level \u00b7 Bollinger + RSI extreme \u00b7 EMA 8/21/50 stack \u00b7 "
         "Break and retest hold \u00b7 5-minute alignment \u00b7 3-candle push + MACD \u00b7 "
-        "Close-position pressure \u00b7 Streak exhaustion\n\n"
+        "Close-position pressure \u00b7 Streak exhaustion \u00b7 Fresh vs ground-down zone \u00b7 "
+        "Wick cluster at level \u00b7 Price channel position \u00b7 Level confluence stack \u00b7 "
+        "Squeeze-release breakout\n\n"
+        "\U0001f6ab No-trade gate\n"
+        "News-spike candles, dead chop (ADX + Choppiness Index), an unresolved volatility "
+        "squeeze and flat EMAs block the signal entirely \u2014 no engine should trade the "
+        "untradeable.\n\n"
         "\U0001f4c8 Confidence\n"
         "48% score strength + 32% filter agreement + 20% setup quality (touch and "
         "rejection count of the level in play, or trend efficiency in open space). "

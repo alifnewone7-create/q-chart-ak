@@ -95,6 +95,26 @@ class Ctx:
             return _ema(tr, p)
         return self._memo(("atr", p), build)
 
+    def adx(self, p):
+        """Returns (adx, di_plus, di_minus) series."""
+        def build():
+            dmp, dmm = [0.0], [0.0]
+            tr = [self.rng[0]]
+            for i in range(1, self.n):
+                up = self.h[i] - self.h[i - 1]
+                dn = self.l[i - 1] - self.l[i]
+                dmp.append(up if (up > dn and up > 0) else 0.0)
+                dmm.append(dn if (dn > up and dn > 0) else 0.0)
+                tr.append(max(self.h[i] - self.l[i],
+                              abs(self.h[i] - self.cl[i - 1]),
+                              abs(self.l[i] - self.cl[i - 1])))
+            atr = _ema(tr, p)
+            pdi = [100.0 * a / max(1e-12, b) for a, b in zip(_ema(dmp, p), atr)]
+            mdi = [100.0 * a / max(1e-12, b) for a, b in zip(_ema(dmm, p), atr)]
+            dx = [100.0 * abs(a - b) / max(1e-12, a + b) for a, b in zip(pdi, mdi)]
+            return _ema(dx, p), pdi, mdi
+        return self._memo(("adx", p), build)
+
     def roc(self, p):
         def build():
             out = []

@@ -4,13 +4,20 @@ from indicators_py import Ctx
 from .common import (
     _clamp,
     _efficiency,
+    _m_accel,
+    _m_adx_dir,
     _m_band,
+    _m_cci,
     _m_exhaustion,
+    _m_heikin,
     _m_htf,
     _m_macd,
     _m_momentum,
     _m_rsi_extreme,
+    _m_squeeze_break,
+    _m_willr,
     _wick_pair,
+    no_trade,
 )
 
 OTC_MIN_CANDLES = 40
@@ -178,6 +185,12 @@ MODULES = [
     ("exhaustion",  "Streak exhaustion",        _m_exhaustion,  0.02, 0.09),
     ("htf",         "5-minute alignment",       _m_htf,         0.06, 0.01),
     ("sr",          "S/R 20 rejection",         _m_sr,          0.02, 0.08),
+    ("adx_dir",     "ADX 14 directional gate",  _m_adx_dir,     0.08, 0.02),
+    ("heikin",      "Heikin-Ashi consistency",  _m_heikin,      0.06, 0.02),
+    ("accel",       "Momentum acceleration",    _m_accel,       0.05, 0.02),
+    ("squeeze",     "Squeeze-release breakout", _m_squeeze_break, 0.04, 0.03),
+    ("cci",         "CCI 20 extreme",           _m_cci,         0.02, 0.09),
+    ("willr",       "Williams %R 14",           _m_willr,       0.02, 0.07),
 ]
 
 
@@ -197,6 +210,12 @@ _PHRASES = {
     "exhaustion": ("the bearish streak looks exhausted", "the bullish streak looks exhausted"),
     "htf": ("the 5-minute view agrees bullish", "the 5-minute view agrees bearish"),
     "sr": ("price is bouncing off 20-candle support", "price is rejecting 20-candle resistance"),
+    "adx_dir": ("ADX confirms a real uptrend in progress", "ADX confirms a real downtrend in progress"),
+    "heikin": ("Heikin-Ashi candles are consistently bullish", "Heikin-Ashi candles are consistently bearish"),
+    "accel": ("upward momentum is accelerating", "downward momentum is accelerating"),
+    "squeeze": ("a volatility squeeze just released upward", "a volatility squeeze just released downward"),
+    "cci": ("CCI is deeply oversold", "CCI is deeply overbought"),
+    "willr": ("Williams %R is pinned at oversold", "Williams %R is pinned at overbought"),
 }
 
 
@@ -230,6 +249,8 @@ def otc_sniper(candles, entry_ts=None):
         return None
     x = Ctx(candles)
     last = x.n - 1
+    if no_trade(x, last)[0]:
+        return None
 
     er = _efficiency(x, last)
     trend_w = _clamp((er - 0.22) / 0.28, 0.0, 1.0)   # 0 = ranging, 1 = trending
@@ -290,7 +311,7 @@ def otc_sniper(candles, entry_ts=None):
 META = {
     "key": "otc_sniper",
     "name": "OTC Sniper Pro",
-    "tagline": "OTC-tuned \u00b7 15 modules \u00b7 regime-adaptive \u00b7 self-weighting",
+    "tagline": "OTC-tuned \u00b7 21 modules \u00b7 no-trade gate \u00b7 regime-adaptive",
     "min_confidence": 60.0,
     "min_candles": OTC_MIN_CANDLES,
     "fn": otc_sniper,
@@ -305,13 +326,20 @@ META = {
         "\u2022 Choppy / exhausted \u2192 mean-reversion modules lead\n"
         "Research on OTC feeds is consistent on this point: fading a running trend and chasing "
         "a chop are the two classic ways to lose, so no single style is hard-coded.\n\n"
-        "\U0001f4ca 15 confluence modules\n"
+        "\U0001f4ca 21 confluence modules\n"
         "Trend side: EMA 5/13/34 stack \u00b7 pullback into EMA13 \u00b7 MACD 6/13/5 thrust \u00b7 "
-        "HH/HL structure \u00b7 3-candle push with RSI9 \u00b7 5-minute alignment\n"
+        "HH/HL structure \u00b7 3-candle push with RSI9 \u00b7 5-minute alignment \u00b7 "
+        "ADX 14 directional gate \u00b7 Heikin-Ashi consistency \u00b7 momentum acceleration \u00b7 "
+        "squeeze-release breakout\n"
         "Reversion side: Bollinger 20/2 extreme \u00b7 RSI14 30/70 \u00b7 Stochastic 9/3 \u00b7 "
-        "stretch from VWAP-proxy \u00b7 streak exhaustion \u00b7 S/R 20 rejection\n"
+        "stretch from VWAP-proxy \u00b7 streak exhaustion \u00b7 S/R 20 rejection \u00b7 "
+        "CCI 20 extreme \u00b7 Williams %R 14\n"
         "Always on: wick rejection \u00b7 candle patterns (engulfing, pin bar, inside-bar break, "
         "star, three soldiers, tweezer)\n\n"
+        "\U0001f6ab No-trade gate\n"
+        "News-spike candles, dead chop (ADX + Choppiness Index), an unresolved volatility "
+        "squeeze and flat EMAs block the signal entirely \u2014 skipping untradeable markets "
+        "is the cheapest accuracy upgrade there is.\n\n"
         "\u2699\ufe0f Self-weighting\n"
         "Each module's recent hit-rate on that specific market re-weights it on every scan, so "
         "modules that are currently reading the asset well count more.\n\n"

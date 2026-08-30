@@ -15,6 +15,9 @@ CHART_CANDLES = 60       # candles drawn on the chart image sent to the channel
 SCAN_START_SEC = 3       # second of the minute the scan begins (earlier = earlier signal)
 SCAN_RESERVE = 8         # stop scanning this many seconds before the entry minute
 EARLY_EXIT_CONF = 88.0   # take a candidate immediately once it scores this high
+DEEP_CONF_BONUS = 12.0   # extra confidence demanded right after a LOSS
+DEEP_CONF_CAP = 90.0     # the deep gate never exceeds this
+DEEP_MIN_AGREE = 0.70    # min filter agreement in deep-analysis mode
 BROADCAST_GAP = 3        # seconds between channels when posting to more than one
 PLINE = messages.PLINE
 
@@ -73,6 +76,9 @@ class SessionManager:
         self.session_id = None
         self.pnl = 0.0
         self.deficit = 0.0
+        # deep-analysis mode: ON right after a LOSS, next signal must pass
+        # a strict multi-engine consensus so back-to-back losses are avoided
+        self.deep_mode = False
         # auto-select mode
         self.auto_mode = False
         self.auto_threshold = 0
@@ -274,6 +280,9 @@ class SessionManager:
         best = None
         st = analysis.active_strategy()
         min_conf = st["min_confidence"]
+        deep = self.deep_mode
+        if deep:
+            min_conf = min(min_conf + DEEP_CONF_BONUS, DEEP_CONF_CAP)
         # snapshot to avoid races with the auto-refresh task swapping the list
         markets_snapshot = list(self.markets)
         # skip markets whose next entry_ts is already signaled
@@ -308,15 +317,37 @@ class SessionManager:
                 top_conf, top_code = res["confidence"], m["code"]
             if res["confidence"] < min_conf:
                 continue
+            if deep and not self._deep_pass(closed, next_entry_ts, res, st):
+                continue
             if best is None or res["confidence"] > best[1]["confidence"]:
                 best = (m, res)
             if best[1]["confidence"] >= EARLY_EXIT_CONF:
                 break
         if best is None:
-            print(f"[session] {st['name']}: no signal \u2014 analysed {checked} markets "
+            mode = " [DEEP ANALYSIS]" if deep else ""
+            print(f"[session] {st['name']}{mode}: no signal \u2014 analysed {checked} markets "
                   f"({thin} had too little history), best was {top_code or 'n/a'} at "
                   f"{top_conf:.1f}% (need {min_conf:.0f}%)")
         return best
+
+    def _deep_pass(self, closed, entry_ts, res, st):
+        """Post-loss gate: strict agreement + every other engine must concur."""
+        if res.get("agree", 1.0) < DEEP_MIN_AGREE:
+            return False
+        import strategies
+        for key in strategies.ORDER:
+            if key == st["key"]:
+                continue
+            other = strategies.get(key)
+            if len(closed) < other["min_candles"]:
+                return False
+            try:
+                r2 = other["fn"](closed, entry_ts)
+            except Exception:
+                return False
+            if not r2 or r2["direction"] != res["direction"]:
+                return False
+        return True
 
     async def _run_signal(self, market, res):
         direction = res["direction"]
@@ -341,9 +372,13 @@ class SessionManager:
             payout=market.get("payout", 0), entry_ts=entry_ts, entry_str=entry_str,
             market_name=market["display"], result=None,
         )
+        reason = res["reason"]
+        if self.deep_mode:
+            reason += (" \U0001f52c Deep analysis: after the previous loss this setup was "
+                       "re-verified \u2014 every engine independently agrees on this direction.")
         await self._broadcast_photo(
             png,
-            signal_caption(market["display"], direction, entry_str, res["reason"],
+            signal_caption(market["display"], direction, entry_str, reason,
                            market.get("payout", 0)),
         )
 
@@ -360,6 +395,9 @@ class SessionManager:
                 return
             c2 = await self._get_candle(market["code"], entry_ts + 60)
             result = "WIN_MTG" if (c2 and self._wins(c2, direction)) else "LOSS"
+
+        # deep-analysis mode: ON after a LOSS, OFF again after any win
+        self.deep_mode = (result == "LOSS")
 
         # performance stats for THIS session, including the current result
         per_trade = float(storage.get_settings().get("per_trade_pct", 1.0))

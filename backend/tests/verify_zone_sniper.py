@@ -76,24 +76,33 @@ assert st["min_candles"] == ZONE_MIN_CANDLES == 60
 assert st["min_confidence"] == 68.0
 assert strategies.ORDER == ["classic", "otc_sniper", "zone_sniper"]
 for needle in ("Multi-rejection", "Trendline", "S/R", "divergence", "sweep",
-               "Confidence", "15", "Confirmed rejection reversal"):
+               "Confidence", "20", "Confirmed rejection reversal",
+               "No-trade gate"):
     assert needle in st["about"], needle
 print("OK registry + about text")
 
-# 2) silent only when too few candles
+# 2) silent only when too few candles (or the no-trade gate blocks)
 assert zone_sniper([]) is None
 assert zone_sniper(walk(59)) is None
-assert zone_sniper(walk(60)) is not None
+c60 = walk(60)
+x60 = Ctx(c60)
+assert zone_sniper(c60) is not None or strategies.no_trade(x60, x60.n - 1)[0]
 print("OK min-candle gate")
 
-# 3) never silent, sane output, across many random markets
+# 3) silent ONLY on no-trade markets, sane output, across many random markets
 seen = {"CALL": 0, "PUT": 0}
 modes = set()
+blocked_ct = 0
 for seed in range(120):
     for gen in (walk, bouncy, trending):
         c = gen(seed=seed) if gen is not walk else walk(seed=seed)
         r = zone_sniper(c)
-        assert r is not None, f"silent on {gen.__name__} seed {seed}"
+        if r is None:
+            x = Ctx(c)
+            assert strategies.no_trade(x, x.n - 1)[0], \
+                f"silent on TRADEABLE {gen.__name__} seed {seed}"
+            blocked_ct += 1
+            continue
         assert r["direction"] in ("CALL", "PUT")
         assert 0.0 <= r["confidence"] <= 95.0
         assert isinstance(r["reason"], str) and len(r["reason"]) > 40
@@ -104,8 +113,8 @@ for seed in range(120):
         seen[r["direction"]] += 1
         modes.add(r["mode"])
 assert seen["CALL"] > 10 and seen["PUT"] > 10, seen
-assert modes == {"zone-reversal", "trend-continuation"}, modes
-print(f"OK 360 markets  {seen}  modes={sorted(modes)}")
+assert modes >= {"zone-reversal", "trend-continuation"}, modes
+print(f"OK 360 markets  {seen}  blocked={blocked_ct}  modes={sorted(modes)}")
 
 # 4) every filter is finite and inside [-1, 1] on every market
 for seed in range(40):
@@ -153,7 +162,7 @@ rev_hits = 0
 for seed in range(200):
     c = realistic(seed=seed)
     r = zone_sniper(c)
-    if r["mode"] == "rejection-reversal":
+    if r and r["mode"] == "rejection-reversal":
         rev_hits += 1
         assert r["reversal_confirmed"] is True
         assert r["confidence"] >= 70.0, r["confidence"]
@@ -196,8 +205,10 @@ try:
 finally:
     storage.save_settings(prev)
 
-# 9) other engines untouched
-assert strategies.classic_momentum(walk(60)) is not None
-assert strategies.otc_sniper(walk(60)) is not None
+# 9) other engines untouched (silence is legal only on no-trade markets)
+for fn, need in ((strategies.classic_momentum, 60), (strategies.otc_sniper, 60)):
+    c = walk(need)
+    x = Ctx(c)
+    assert fn(c) is not None or strategies.no_trade(x, x.n - 1)[0]
 print("OK classic + otc_sniper still work")
 print("\nALL ZONE SNIPER CHECKS PASSED")

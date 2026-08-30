@@ -240,6 +240,29 @@ def render_chart(candles, title, badge=None, *, payout=0, entry_ts=None,
         drew_res = drew_res or is_res
         drew_sup = drew_sup or not is_res
 
+    # ---- diagonal trendlines (rising support / falling resistance) ------
+    drew_tl = False
+    tlines = []
+    try:
+        from strategies import zone_trendlines
+        tlines = zone_trendlines(candles)
+    except Exception:
+        tlines = []
+    off = len(candles) - n
+    for tl in tlines:
+        tx0 = max(0, tl["j0"] - off)
+        tx1 = min(n + 2, tl["j1"] - off + 3)
+        if tx1 <= tx0:
+            continue
+        ty0 = tl["slope"] * (tx0 + off) + tl["intercept"]
+        ty1 = tl["slope"] * (tx1 + off) + tl["intercept"]
+        col = SUP_COL if tl["kind"] == "S" else RES_COL
+        ax.plot([tx0, tx1], [ty0, ty1], color=col, linewidth=1.5,
+                linestyle=(0, (7, 4)), alpha=0.85, zorder=2)
+        ax.text(tx1, ty1, " TL", color=col, fontsize=7.5, ha="left",
+                va="center", family=FMONO, alpha=0.9, zorder=3)
+        drew_tl = True
+
     ax.plot(xs, ema_m, color=MA_MID, linewidth=2.6, alpha=0.95, zorder=3,
             solid_capstyle="round")
     ax.plot(xs, ema_f, color=MA_FAST, linewidth=2.6, alpha=0.95, zorder=4,
@@ -264,6 +287,9 @@ def render_chart(candles, title, badge=None, *, payout=0, entry_ts=None,
         handles.append(Line2D([], [], color=RES_COL, lw=2.4, label="Resistance Zone"))
     if drew_sup:
         handles.append(Line2D([], [], color=SUP_COL, lw=2.4, label="Support Zone"))
+    if drew_tl:
+        handles.append(Line2D([], [], color="#8ab4d8", lw=1.6, linestyle=(0, (7, 4)),
+                              label="Trendline"))
     handles.append(Line2D([], [], color=REJ_COL, lw=1.2, linestyle=(0, (1, 2)),
                           label="Rejection Zone"))
     leg = ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(0.012, 0.955),

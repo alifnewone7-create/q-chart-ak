@@ -12,8 +12,8 @@ To add a strategy: drop a new <name>.py in here with a META dict, import it
 below and append its key to ORDER. Nothing else in the bot changes.
 """
 from .classic import META as _CLASSIC_META
-from .classic import classic_momentum  # noqa: F401  (flat re-export)
-from .common import _clamp, _efficiency  # noqa: F401  (flat re-export)
+from .classic import CLASSIC_MIN_CANDLES, classic_momentum  # noqa: F401
+from .common import _clamp, _efficiency, no_trade  # noqa: F401  (flat re-exports)
 from .otc_sniper import META as _OTC_META
 from .otc_sniper import (  # noqa: F401  (flat re-exports)
     MODULES,
@@ -32,6 +32,7 @@ from .zone_sniper import (  # noqa: F401  (flat re-exports)
     _z_rev_confirm,
     zone_levels,
     zone_sniper,
+    zone_trendlines,
 )
 
 _ENGINES = (_CLASSIC_META, _OTC_META, _ZONE_META)

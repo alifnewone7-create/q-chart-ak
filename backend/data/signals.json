@@ -92,5 +92,20 @@
     "pnl_delta": 1.0,
     "pnl_total": 1.0,
     "channel_id": 111
+  },
+  {
+    "session_id": "S1",
+    "date": "30.08.2026",
+    "code": "USDINR_otc",
+    "display": "USD/INR OTC",
+    "direction": "CALL",
+    "entry": "21:14",
+    "entry_ts": 1788102840,
+    "result": "WIN",
+    "pnl_delta": 1.0,
+    "pnl_total": 1.0,
+    "deficit_after": 0.0,
+    "channel_id": null,
+    "channel_ids": []
   }
 ]
