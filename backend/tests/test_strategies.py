@@ -91,7 +91,8 @@ class TestQuantumRemoved:
 
     def test_no_quantum_references_in_backend(self):
         import pathlib
-        root = pathlib.Path(strategies.__file__).parent
+        # strategies is a package now -> scan the whole backend dir
+        root = pathlib.Path(strategies.__file__).resolve().parents[1]
         hits = []
         for p in root.rglob("*.py"):
             if "pyquotex" in p.parts or "tests" in p.parts:
